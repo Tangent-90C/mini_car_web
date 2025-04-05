@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Streams</title>
+    <style>
+        .video-container {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+        }
+
+        .line-2 {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+        }
+
+        .video-box {
+            margin: 10px;
+            border: 1px solid #ccc;
+            padding: 10px;
+            width: 30%;
+        }
+
+        canvas {
+            width: 100%;
+            height: auto;
+        }
+
+        .control-panel {
+            margin: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            width: 30%;
+        }
+
+        .slider-group {
+            margin: 10px 0;
+        }
+
+        .slider-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .slider-group input[type="range"] {
+            width: 100%;
+        }
+
+        .slider-group input[type="number"] {
+            width: 60px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Video Streams</h1>
+    <div class="video-container">
+        <div class="video-box">
+            <h2>原画</h2>
+            <canvas id="canvas1"></canvas>
+        </div>
+        <div class="video-box">
+            <h2>直方图均衡</h2>
+            <canvas id="canvas1_1"></canvas>
+        </div>
+        <div class="video-box">
+            <h2>YOLO版本</h2>
+            <canvas id="canvas3"></canvas>
+            <div id="fpsDisplay" style="margin-top: 5px;">FPS: --</div>
+            <!-- 添加以下4个显示元素 -->
+            <div id="carAreaDisplay" style="margin-top: 5px;">Car Area: --</div>
+            <div id="carOffsetDisplay" style="margin-top: 5px;">Car Offset: --</div>
+            <div id="whiteAreaDisplay" style="margin-top: 5px;">White Area: --</div>
+            <div id="whiteOffsetDisplay" style="margin-top: 5px;">White Offset: --</div>
+        </div>
+    </div>
+
+    <div class="line-2">
+        <div class="control-panel">
+            <h2>HSV Threshold Controls</h2>
+            <div class="slider-group">
+                <label>H Lower: <span id="hLowerValue">100</span></label>
+                <input type="range" id="hLower" min="0" max="180" value="100">
+                <input type="number" id="hLowerNum" min="0" max="180" value="100">
+            </div>
+            <div class="slider-group">
+                <label>H Upper: <span id="hUpperValue">200</span></label>
+                <input type="range" id="hUpper" min="0" max="180" value="200">
+                <input type="number" id="hUpperNum" min="0" max="180" value="200">
+            </div>
+            <div class="slider-group">
+                <label>S Lower: <span id="sLowerValue">100</span></label>
+                <input type="range" id="sLower" min="0" max="255" value="100">
+                <input type="number" id="sLowerNum" min="0" max="255" value="100">
+            </div>
+            <div class="slider-group">
+                <label>S Upper: <span id="sUpperValue">200</span></label>
+                <input type="range" id="sUpper" min="0" max="255" value="200">
+                <input type="number" id="sUpperNum" min="0" max="255" value="200">
+            </div>
+            <div class="slider-group">
+                <label>V Lower: <span id="vLowerValue">100</span></label>
+                <input type="range" id="vLower" min="0" max="255" value="100">
+                <input type="number" id="vLowerNum" min="0" max="255" value="100">
+            </div>
+            <div class="slider-group">
+                <label>V Upper: <span id="vUpperValue">200</span></label>
+                <input type="range" id="vUpper" min="0" max="255" value="200">
+                <input type="number" id="vUpperNum" min="0" max="255" value="200">
+            </div>
+            <button id="sendBtn">Send HSV Values</button>
+
+            <!-- 新增拍照和录像按钮 -->
+            <div style="margin-top: 20px;">
+                <button id="captureBtn">Take Photo</button>
+                <button id="recordBtn">Start Recording</button>
+            </div>
+        </div>
+        <div class="video-box">
+            <h2>Mask版本</h2>
+            <canvas id="canvas2"></canvas>
+        </div>
+
+        <!-- 在适当位置添加以下内容 -->
+        <div class="upload-section">
+            <h3>上传图片检测</h3>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <input type="file" id="imageInput" accept="image/*" required>
+                <button type="submit">上传检测</button>
+            </form>
+            <div id="resultContainer" style="margin-top: 20px;">
+                <img id="resultImage" style="max-width: 100%; display: none;">
+                <div id="resultData" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+    </div>
+
+
+    <script>
+        // 获取 Canvas 元素
+        const canvas1 = document.getElementById('canvas1');
+        const canvas1_1 = document.getElementById('canvas1_1');
+        const canvas2 = document.getElementById('canvas2');
+        const canvas3 = document.getElementById('canvas3');
+        const ctx1 = canvas1.getContext('2d');
+        const ctx1_1 = canvas1_1.getContext('2d');
+        const ctx2 = canvas2.getContext('2d');
+        const ctx3 = canvas3.getContext('2d');
+
+        // 设置 Canvas 尺寸
+        canvas1.width = 640;
+        canvas1.height = 480;
+        canvas1_1.width = 640;
+        canvas1_1.height = 480;
+        canvas2.width = 640;
+        canvas2.height = 480;
+        canvas3.width = 640;
+        canvas3.height = 480;
+
+        // 获取当前页面的主机名
+        const host = window.location.hostname;
+        const port = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+
+        // 动态构建 WebSocket URL
+        const ws1Url = `ws://${host}:${port}/ws1`;
+        const ws1_1Url = `ws://${host}:${port}/ws1_1`;
+        const ws2Url = `ws://${host}:${port}/ws2`;
+        const ws3Url = `ws://${host}:${port}/ws3`;
+
+        // 连接到 WebSocket 服务端
+        const ws1 = new WebSocket(ws1Url);
+        const ws1_1 = new WebSocket(ws1_1Url);
+        const ws2 = new WebSocket(ws2Url);
+        const ws3 = new WebSocket(ws3Url);
+
+        // 处理 WebSocket 消息
+        ws1.onmessage = function (event) {
+            const img = new Image();
+            img.onload = function () {
+                ctx1.drawImage(img, 0, 0, canvas1.width, canvas1.height);
+            };
+            img.src = URL.createObjectURL(new Blob([event.data], { type: 'image/jpeg' }));
+        };
+
+        ws1_1.onmessage = function (event) {
+            const img = new Image();
+            img.onload = function () {
+                ctx1_1.drawImage(img, 0, 0, canvas1_1.width, canvas1_1.height);
+            };
+            img.src = URL.createObjectURL(new Blob([event.data], { type: 'image/jpeg' }));
+        };
+
+
+        ws2.onmessage = function (event) {
+            const img = new Image();
+            img.onload = function () {
+                ctx2.drawImage(img, 0, 0, canvas2.width, canvas2.height);
+            };
+            img.src = URL.createObjectURL(new Blob([event.data], { type: 'image/jpeg' }));
+        };
+
+        // 在ws3.onmessage中添加FPS计算
+        ws3.onmessage = function (event) {
+            const img = new Image();
+            img.onload = function () {
+                ctx3.drawImage(img, 0, 0, canvas3.width, canvas3.height);
+
+                // 计算FPS
+                const now = performance.now();
+                if (!ws3.lastFrameTime) {
+                    ws3.lastFrameTime = now;
+                    ws3.frameCount = 0;
+                } else {
+                    ws3.frameCount++;
+                    if (now - ws3.lastFrameTime >= 1000) { // 每秒更新一次
+                        const fps = Math.round((ws3.frameCount * 1000) / (now - ws3.lastFrameTime));
+                        document.getElementById('fpsDisplay').textContent = `FPS: ${fps}`;
+                        ws3.lastFrameTime = now;
+                        ws3.frameCount = 0;
+                    }
+                }
+            };
+            img.src = URL.createObjectURL(new Blob([event.data], { type: 'image/jpeg' }));
+        };
+
+        // 处理 WebSocket 连接打开
+        ws1.onopen = function () {
+            console.log('Connected to ws1');
+        };
+
+        ws1_1.onopen = function () {
+            console.log('Connected to ws1_1');
+        };
+
+        ws2.onopen = function () {
+            console.log('Connected to ws2');
+        };
+
+        ws3.onopen = function () {
+            console.log('Connected to ws3');
+        };
+
+        // 处理 WebSocket 连接关闭
+        ws1.onclose = function () {
+            console.log('Disconnected from ws1');
+        };
+
+        ws1_1.onclose = function () {
+            console.log('Disconnected from ws1_1');
+        };
+
+        ws2.onclose = function () {
+            console.log('Disconnected from ws2');
+        };
+
+        ws3.onclose = function () {
+            console.log('Disconnected from ws3');
+        };
+
+        // 获取控制面板元素
+        const hLower = document.getElementById('hLower');
+        const hUpper = document.getElementById('hUpper');
+        const sLower = document.getElementById('sLower');
+        const sUpper = document.getElementById('sUpper');
+        const vLower = document.getElementById('vLower');
+        const vUpper = document.getElementById('vUpper');
+        const hLowerValue = document.getElementById('hLowerValue');
+        const hUpperValue = document.getElementById('hUpperValue');
+        const sLowerValue = document.getElementById('sLowerValue');
+        const sUpperValue = document.getElementById('sUpperValue');
+        const vLowerValue = document.getElementById('vLowerValue');
+        const vUpperValue = document.getElementById('vUpperValue');
+        const hLowerNum = document.getElementById('hLowerNum');
+        const hUpperNum = document.getElementById('hUpperNum');
+        const sLowerNum = document.getElementById('sLowerNum');
+        const sUpperNum = document.getElementById('sUpperNum');
+        const vLowerNum = document.getElementById('vLowerNum');
+        const vUpperNum = document.getElementById('vUpperNum');
+        const sendBtn = document.getElementById('sendBtn');
+
+        // 更新滑块值显示并发送数据
+        // 在脚本开头添加
+        function debounce(func, wait) {
+            let timeout;
+            return function () {
+                const context = this;
+                const args = arguments;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    func.apply(context, args);
+                }, wait);
+            };
+        }
+
+
+        // 新增拍照和录像功能
+        const captureBtn = document.getElementById('captureBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        let isRecording = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // 拍照功能
+        captureBtn.addEventListener('click', async function () {
+            const canvas = document.getElementById('canvas1');
+            const image = canvas.toDataURL('image/jpeg');
+            const link = document.createElement('a');
+            link.download = `capture_${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`;
+            link.href = image;
+            link.click();
+        });
+
+        // 录像功能
+        recordBtn.addEventListener('click', async function () {
+            if (!isRecording) {
+                // 开始录像
+                isRecording = true;
+                recordBtn.textContent = 'Stop Recording';
+                recordedChunks = [];
+
+                const canvas = document.getElementById('canvas1');
+                const stream = canvas.captureStream(30);
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+                mediaRecorder.ondataavailable = function (e) {
+                    if (e.data.size > 0) {
+                        recordedChunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.start(25); // 每25ms收集一次数据
+            } else {
+                // 停止录像
+                isRecording = false;
+                recordBtn.textContent = 'Start Recording';
+                mediaRecorder.stop();
+
+                mediaRecorder.onstop = function () {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = `recording_${new Date().toISOString().replace(/[:.]/g, '-')}.webm`;
+                    link.href = url;
+                    link.click();
+                };
+            }
+        });
+
+        // 添加ws4连接
+        const ws4 = new WebSocket(`ws://${host}:${port}/ws4`);
+
+        ws4.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            // 更新数据显示
+            document.getElementById('carAreaDisplay').textContent = `Car Area: ${data.car_area || '--'}`;
+            document.getElementById('carOffsetDisplay').textContent = `Car Offset: ${data.car_offset ? `(${data.car_offset[0]}, ${data.car_offset[1]})` : '--'}`;
+            document.getElementById('whiteAreaDisplay').textContent = `White Area: ${data.white_area || '--'}`;
+            document.getElementById('whiteOffsetDisplay').textContent = `White Offset: ${data.white_offset ? `(${data.white_offset[0]}, ${data.white_offset[1]})` : '--'}`;
+        };
+
+        // 修改updateAndSendHSVValues函数，确保正确处理发送逻辑
+        const updateAndSendHSVValues = debounce(function () {
+            // 更新显示值
+            hLowerValue.textContent = hLower.value;
+            hUpperValue.textContent = hUpper.value;
+            sLowerValue.textContent = sLower.value;
+            sUpperValue.textContent = sUpper.value;
+            vLowerValue.textContent = vLower.value;
+            vUpperValue.textContent = vUpper.value;
+
+            hLowerNum.value = hLower.value;
+            hUpperNum.value = hUpper.value;
+            sLowerNum.value = sLower.value;
+            sUpperNum.value = sUpper.value;
+            vLowerNum.value = vLower.value;
+            vUpperNum.value = vUpper.value;
+
+            // 确保ws4连接已建立
+            if (ws4.readyState === WebSocket.OPEN) {
+                const hsvValues = {
+                    h_lower: parseInt(hLower.value),
+                    h_upper: parseInt(hUpper.value),
+                    s_lower: parseInt(sLower.value),
+                    s_upper: parseInt(sUpper.value),
+                    v_lower: parseInt(vLower.value),
+                    v_upper: parseInt(vUpper.value)
+                };
+                ws4.send(JSON.stringify(hsvValues));
+                console.log('Sent HSV values:', hsvValues);
+            } else {
+                console.warn('WebSocket ws4 not connected');
+            }
+        }, 100);
+
+        // 添加ws2连接状态检查
+        ws4.onopen = function () {
+            console.log('Connected to ws4');
+            // 连接建立后立即发送当前值
+            updateAndSendHSVValues();
+        };
+
+        // 滑块事件监听 - 修改为直接发送
+        hLower.addEventListener('input', updateAndSendHSVValues);
+        hUpper.addEventListener('input', updateAndSendHSVValues);
+        sLower.addEventListener('input', updateAndSendHSVValues);
+        sUpper.addEventListener('input', updateAndSendHSVValues);
+        vLower.addEventListener('input', updateAndSendHSVValues);
+        vUpper.addEventListener('input', updateAndSendHSVValues);
+
+        // 数字输入框事件监听 - 修改为直接发送
+        hLowerNum.addEventListener('change', function () {
+            hLower.value = Math.min(Math.max(this.value, 0), 180);
+            updateAndSendHSVValues();
+        });
+        hUpperNum.addEventListener('change', function () {
+            hUpper.value = Math.min(Math.max(this.value, 0), 180);
+            updateAndSendHSVValues();
+        });
+        sLowerNum.addEventListener('change', function () {
+            sLower.value = Math.min(Math.max(this.value, 0), 255);
+            updateAndSendHSVValues();
+        });
+        sUpperNum.addEventListener('change', function () {
+            sUpper.value = Math.min(Math.max(this.value, 0), 255);
+            updateAndSendHSVValues();
+        });
+        vLowerNum.addEventListener('change', function () {
+            vLower.value = Math.min(Math.max(this.value, 0), 255);
+            updateAndSendHSVValues();
+        });
+        vUpperNum.addEventListener('change', function () {
+            vUpper.value = Math.min(Math.max(this.value, 0), 255);
+            updateAndSendHSVValues();
+        });
+
+        // 可以保留发送按钮，但改为可选功能
+        sendBtn.addEventListener('click', function () {
+            updateAndSendHSVValues();
+            alert('手动发送成功！当前值已更新到服务器');
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const fileInput = document.getElementById('imageInput');
+            if (!fileInput.files.length) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('上传失败');
+                }
+
+                // 显示结果图像
+                const resultImage = document.getElementById('resultImage');
+                resultImage.src = URL.createObjectURL(await response.blob());
+                resultImage.style.display = 'block';
+
+                // 显示检测数据
+                const resultData = document.getElementById('resultData');
+                resultData.innerHTML = `
+                <p>小车区域: ${response.headers.get('car_area') || '无'}</p>
+                <p>小车偏移: ${response.headers.get('car_offset') || '无'}</p>
+                <p>白色区域: ${response.headers.get('white_area') || '无'}</p>
+                <p>白色偏移: ${response.headers.get('white_offset') || '无'}</p>
+            `;
+
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+
+    </script>
+</body>
